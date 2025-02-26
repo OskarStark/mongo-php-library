@@ -9,7 +9,6 @@ use MongoDB\BSON\Type;
 use MongoDB\Builder\Encoder\CombinedFieldQueryEncoder;
 use MongoDB\Builder\Encoder\DateTimeEncoder;
 use MongoDB\Builder\Encoder\DictionaryEncoder;
-use MongoDB\Builder\Encoder\ExpressionEncoder;
 use MongoDB\Builder\Encoder\FieldPathEncoder;
 use MongoDB\Builder\Encoder\OperatorEncoder;
 use MongoDB\Builder\Encoder\OutputWindowEncoder;
@@ -33,6 +32,7 @@ use stdClass;
 
 use function array_key_exists;
 use function is_object;
+use function is_string;
 
 /** @template-implements Encoder<Type|stdClass|array|string|int, Pipeline|StageInterface|ExpressionInterface|QueryInterface> */
 final class BuilderEncoder implements Encoder
@@ -40,7 +40,7 @@ final class BuilderEncoder implements Encoder
     /** @template-use EncodeIfSupported<Type|stdClass|array|string|int, Pipeline|StageInterface|ExpressionInterface|QueryInterface> */
     use EncodeIfSupported;
 
-    /** @var array<class-string, class-string<ExpressionEncoder>> */
+    /** @var array<class-string, class-string<Encoder>> */
     private array $defaultEncoders = [
         Pipeline::class => PipelineEncoder::class,
         Variable::class => VariableEncoder::class,
@@ -53,10 +53,10 @@ final class BuilderEncoder implements Encoder
         DateTimeInterface::class => DateTimeEncoder::class,
     ];
 
-    /** @var array<class-string, ExpressionEncoder|null> */
+    /** @var array<class-string, Encoder|null> */
     private array $cachedEncoders = [];
 
-    /** @param array<class-string, class-string<ExpressionEncoder>> $customEncoders */
+    /** @param array<class-string, Encoder> $customEncoders */
     public function __construct(private readonly array $customEncoders = [])
     {
     }
@@ -82,7 +82,7 @@ final class BuilderEncoder implements Encoder
         return $encoder->encode($value);
     }
 
-    private function getEncoderFor(object $value): ExpressionEncoder|null
+    private function getEncoderFor(object $value): Encoder|null
     {
         $valueClass = $value::class;
         if (array_key_exists($valueClass, $this->cachedEncoders)) {
@@ -93,13 +93,22 @@ final class BuilderEncoder implements Encoder
 
         // First attempt: match class name exactly
         if (isset($encoderList[$valueClass])) {
-            return $this->cachedEncoders[$valueClass] = new $encoderList[$valueClass]($this);
+            $encoder = $encoderList[$valueClass];
+            if (is_string($encoder)) {
+                $encoder = new $encoder($this);
+            }
+
+            return $this->cachedEncoders[$valueClass] = $encoder;
         }
 
         // Second attempt: catch child classes
-        foreach ($encoderList as $className => $encoderClass) {
+        foreach ($encoderList as $className => $encoder) {
             if ($value instanceof $className) {
-                return $this->cachedEncoders[$valueClass] = new $encoderClass($this);
+                if (is_string($encoder)) {
+                    $encoder = new $encoder($this);
+                }
+
+                return $this->cachedEncoders[$valueClass] = $encoder;
             }
         }
 
