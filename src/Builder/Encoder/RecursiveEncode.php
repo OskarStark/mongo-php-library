@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace MongoDB\Builder\Encoder;
 
-use MongoDB\Builder\BuilderEncoder;
+use MongoDB\Codec\Encoder;
 use stdClass;
+use WeakReference;
 
 use function get_object_vars;
 use function is_array;
 
+/** @internal */
 trait RecursiveEncode
 {
-    final public function __construct(protected readonly BuilderEncoder $encoder)
+    /** @param WeakReference<Encoder> $encoder */
+    final public function __construct(private readonly WeakReference $encoder)
     {
     }
 
@@ -44,6 +47,13 @@ trait RecursiveEncode
             return $value;
         }
 
-        return $this->encoder->encodeIfSupported($value);
+        /**
+         * If the BuilderEncoder instance is removed from the memory, the
+         * instances of the classes using this trait will be removed as well.
+         * Therefore, the weak reference will never return null.
+         *
+         * @psalm-suppress PossiblyNullReference
+         */
+        return $this->encoder->get()->encodeIfSupported($value);
     }
 }
